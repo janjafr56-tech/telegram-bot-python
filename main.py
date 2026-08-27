@@ -129,6 +129,7 @@ def get_user(user_id):
     """, (user_id,))
 
     result = cur.fetchone()
+
     conn.close()
 
     return result
@@ -168,25 +169,25 @@ def add_daily_edit(user_id):
 
 def get_level(points):
 
-    if points >= 10000:
+    if points >= 50000:
         return 8, "💎👑"
 
-    if points >= 5000:
+    if points >= 25000:
         return 7, "👑"
 
-    if points >= 2000:
+    if points >= 12000:
         return 6, "🔥"
 
-    if points >= 1000:
+    if points >= 6000:
         return 5, "💎"
 
-    if points >= 500:
+    if points >= 3000:
         return 4, "🥇"
 
-    if points >= 250:
+    if points >= 1500:
         return 3, "🥈"
 
-    if points >= 100:
+    if points >= 500:
         return 2, "🥉"
 
     return 1, "🪵"
@@ -226,6 +227,40 @@ def get_rank(user_id):
     conn.close()
 
     return rank
+
+
+def get_rank_badge(rank):
+
+    if rank == 1:
+        return "🥇"
+
+    if rank == 2:
+        return "🥈"
+
+    if rank == 3:
+        return "🥉"
+
+    if rank <= 10:
+        return "🔵"
+
+    return "⚪"
+
+
+def get_rank_name(rank):
+
+    if rank == 1:
+        return "رنگ 1 - طلایی"
+
+    if rank == 2:
+        return "رنگ 2 - نقره‌ای"
+
+    if rank == 3:
+        return "رنگ 3 - برنزی"
+
+    if rank <= 10:
+        return f"رنگ {rank} - آبی"
+
+    return f"رنگ {rank}"
 
 
 def top_users():
@@ -294,46 +329,129 @@ def save_edit(user_id, file_hash, score):
 
 
 # =========================
-# SCORE
+# STRICT SCORE 1 - 10
 # =========================
 
 def calculate_score(video):
 
-    score = 70
-
     duration = video.duration or 0
+    width = video.width or 0
+    height = video.height or 0
+    file_size = video.file_size or 0
 
-    if duration >= 5:
-        score += 5
+    # شروع خیلی پایین و سخت‌گیرانه
+    score = 1
 
-    if duration >= 10:
-        score += 5
+    # -------------------------
+    # RESOLUTION
+    # -------------------------
 
-    if video.width and video.height:
+    if width >= 1920 and height >= 1080:
+        score += 3
 
-        if video.width >= 720 and video.height >= 720:
-            score += 5
+    elif width >= 1280 and height >= 720:
+        score += 2
 
-    if video.file_size:
+    elif width >= 720 and height >= 480:
+        score += 1
 
-        if video.file_size >= 1_000_000:
-            score += 5
-
-    return min(score, 100)
+    else:
+        score -= 1
 
 
-def score_icon(score):
+    # -------------------------
+    # DURATION
+    # -------------------------
 
-    if score >= 90:
-        return "🟢"
+    if 5 <= duration <= 60:
+        score += 1
 
-    if score >= 80:
+    elif 3 <= duration < 5:
+        score += 0
+
+    elif duration > 60:
+        score -= 1
+
+    else:
+        score -= 1
+
+
+    # -------------------------
+    # FILE SIZE
+    # -------------------------
+
+    if file_size >= 5_000_000:
+        score += 1
+
+    elif file_size >= 1_000_000:
+        score += 0
+
+    else:
+        score -= 1
+
+
+    # -------------------------
+    # ASPECT RATIO
+    # -------------------------
+
+    if width > 0 and height > 0:
+
+        ratio = width / height
+
+        if 0.5 <= ratio <= 2.2:
+            score += 1
+        else:
+            score -= 1
+
+
+    # -------------------------
+    # FINAL
+    # -------------------------
+
+    return max(1, min(score, 10))
+
+
+# =========================
+# SCORE -> POINTS
+# =========================
+
+def score_to_points(score):
+
+    points_table = {
+        1: 1,
+        2: 8,
+        3: 18,
+        4: 30,
+        5: 42,
+        6: 55,
+        7: 68,
+        8: 80,
+        9: 92,
+        10: 100
+    }
+
+    return points_table.get(score, 1)
+
+
+# =========================
+# SCORE BADGE
+# =========================
+
+def score_badge(score):
+
+    if score == 10:
+        return "💎"
+
+    if score == 9:
+        return "🟣"
+
+    if score >= 7:
         return "🔵"
 
-    if score >= 70:
+    if score >= 5:
         return "🟡"
 
-    if score >= 60:
+    if score >= 3:
         return "🟠"
 
     return "🔴"
@@ -355,7 +473,10 @@ def start(message):
 
 🎥 ادیتت را بفرست.
 
-🏆 Points
+🎯 نمره: 1 تا 10
+🏆 Points: 1 تا 100
+🎨 رنگ/رتبه: بر اساس Ranking
+
 📈 Level
 🥇 Ranking
 🔁 ضد ادیت تکراری
@@ -385,8 +506,13 @@ def help_command(message):
 
 🎬 یک ویدیو بفرست تا بررسی شود.
 
+🎯 نمره ادیت: 1 تا 10
+🏆 Points: 1 تا 100
+
+🎨 رنگ/رتبه بر اساس جایگاه Ranking است.
+
 🏆 /points
-مشاهده Points و Level
+مشاهده Points و Level و رنگ
 
 🥇 /rank
 مشاهده Top 10
@@ -415,9 +541,12 @@ def points_command(message):
     points = user[0]
     daily = user[1]
 
-    level, icon = get_level(points)
+    level, level_icon = get_level(points)
 
     rank = get_rank(message.from_user.id)
+
+    rank_badge = get_rank_badge(rank)
+    rank_name = get_rank_name(rank)
 
     bot.reply_to(
         message,
@@ -426,9 +555,11 @@ def points_command(message):
 
 🏆 Points: {points}
 
-{icon} Level: {level}
+{level_icon} Level: {level}
 
-🥇 Rank: #{rank}
+{rank_badge} Rank: #{rank}
+
+🎨 {rank_name}
 
 📅 ادیت امروز: {daily}/{DAILY_LIMIT}
 """
@@ -465,16 +596,19 @@ def rank_command(message):
 
         name = first_name or username or "User"
 
-        level, icon = get_level(points)
+        level, level_icon = get_level(points)
 
         if i <= 3:
             place = medals[i - 1]
         else:
             place = f"{i}."
 
+        rank_badge = get_rank_badge(i)
+
         text += (
             f"{place} {name}\n"
-            f"   {icon} Level {level}\n"
+            f"   {rank_badge} رنگ {i}\n"
+            f"   {level_icon} Level {level}\n"
             f"   🏆 {points} Points\n\n"
         )
 
@@ -497,7 +631,10 @@ def receive_video(message):
     points_before = user[0]
     daily = user[1]
 
-    # محدودیت روزانه
+    # -------------------------
+    # DAILY LIMIT
+    # -------------------------
+
     if daily >= DAILY_LIMIT:
 
         bot.reply_to(
@@ -513,14 +650,19 @@ def receive_video(message):
 
         return
 
+
     processing = bot.reply_to(
         message,
-        "⏳ ادیت دریافت شد...\n🔍 در حال بررسی..."
+        "⏳ ادیت دریافت شد...\n🔍 بررسی سخت‌گیرانه در حال انجام است..."
     )
+
 
     try:
 
-        # دریافت فایل
+        # -------------------------
+        # DOWNLOAD
+        # -------------------------
+
         file_info = bot.get_file(
             message.video.file_id
         )
@@ -529,7 +671,11 @@ def receive_video(message):
             file_info.file_path
         )
 
-        # ضد تکرار
+
+        # -------------------------
+        # DUPLICATE
+        # -------------------------
+
         file_hash = make_hash(file_data)
 
         if is_duplicate(file_hash):
@@ -546,20 +692,41 @@ def receive_video(message):
 
             return
 
-        # نمره
+
+        # -------------------------
+        # SCORE
+        # -------------------------
+
         score = calculate_score(
             message.video
         )
 
-        # Level قبل
+
+        # -------------------------
+        # POINTS
+        # -------------------------
+
+        earned_points = score_to_points(
+            score
+        )
+
+
+        # -------------------------
+        # OLD LEVEL
+        # -------------------------
+
         old_level, _ = get_level(
             points_before
         )
 
-        # ثبت اطلاعات
+
+        # -------------------------
+        # SAVE
+        # -------------------------
+
         add_points(
             message.from_user.id,
-            score
+            earned_points
         )
 
         add_daily_edit(
@@ -572,7 +739,11 @@ def receive_video(message):
             score
         )
 
-        # اطلاعات جدید
+
+        # -------------------------
+        # NEW DATA
+        # -------------------------
+
         updated = get_user(
             message.from_user.id
         )
@@ -588,9 +759,24 @@ def receive_video(message):
             message.from_user.id
         )
 
-        score_color = score_icon(score)
+        rank_badge = get_rank_badge(rank)
+        rank_name = get_rank_name(rank)
+
+
+        # -------------------------
+        # SCORE DISPLAY
+        # -------------------------
+
+        score_badge_icon = score_badge(
+            score
+        )
 
         remaining = DAILY_LIMIT - new_daily
+
+
+        # -------------------------
+        # LEVEL UP
+        # -------------------------
 
         level_up = ""
 
@@ -599,34 +785,48 @@ def receive_video(message):
             level_up = f"""
 🎉 LEVEL UP!
 
-{level_icon} Level {new_level}
+{level_icon} Level {new_level}!
 """
 
-        text = f"""
-🎬 نتیجه ادیت
 
-{score_color} نمره: {score}/100
+        # -------------------------
+        # RESULT
+        # -------------------------
+
+        text = f"""
+🎬 نتیجه بررسی ادیت
+
+{score_badge_icon} نمره: {score}/10
 
 ━━━━━━━━━━━━
 
-🏆 +{score} Points
+🏆 +{earned_points} Points
 
 💰 مجموع: {new_points} Points
 
 {level_icon} Level: {new_level}
 
-🥇 Rank: #{rank}
+{rank_badge} Rank: #{rank}
+
+🎨 {rank_name}
 
 📅 ادیت باقی‌مانده امروز: {remaining}
 
+━━━━━━━━━━━━
+
+⚠️ سیستم فعلاً سخت‌گیرانه است.
+🤖 تحلیل واقعی تصویر و آهنگ در مرحله AI اضافه می‌شود.
+
 {level_up}
 """
+
 
         bot.edit_message_text(
             text,
             message.chat.id,
             processing.message_id
         )
+
 
     except Exception as error:
 
@@ -636,7 +836,7 @@ def receive_video(message):
             """
 ❌ هنگام بررسی ادیت مشکلی پیش آمد.
 
-دوباره امتحان کن.
+لطفاً دوباره امتحان کن.
 """,
             message.chat.id,
             processing.message_id
